@@ -9,6 +9,7 @@ our $VERSION = '1.56';
 
 our %feature = (
     fc              => 'feature_fc',
+    isa             => 'feature_isa',
     say             => 'feature_say',
     state           => 'feature_state',
     switch          => 'feature_switch',
@@ -30,14 +31,15 @@ my %feature_bits = (
     declared_refs   => 0x0004,
     evalbytes       => 0x0008,
     fc              => 0x0010,
-    postderef_qq    => 0x0020,
-    refaliasing     => 0x0040,
-    say             => 0x0080,
-    signatures      => 0x0100,
-    state           => 0x0200,
-    switch          => 0x0400,
-    unicode_eval    => 0x0800,
-    unicode_strings => 0x1000,
+    isa             => 0x0020,
+    postderef_qq    => 0x0040,
+    refaliasing     => 0x0080,
+    say             => 0x0100,
+    signatures      => 0x0200,
+    state           => 0x0400,
+    switch          => 0x0800,
+    unicode_eval    => 0x1000,
+    unicode_strings => 0x2000,
 );
 
 our %feature_bundle = (
@@ -46,7 +48,7 @@ our %feature_bundle = (
     "5.15"    => [qw(current_sub evalbytes fc say state switch unicode_eval unicode_strings)],
     "5.23"    => [qw(current_sub evalbytes fc postderef_qq say state switch unicode_eval unicode_strings)],
     "5.27"    => [qw(bitwise current_sub evalbytes fc postderef_qq say state switch unicode_eval unicode_strings)],
-    "all"     => [qw(bitwise current_sub declared_refs evalbytes fc postderef_qq refaliasing say signatures state switch unicode_eval unicode_strings)],
+    "all"     => [qw(bitwise current_sub declared_refs evalbytes fc isa postderef_qq refaliasing say signatures state switch unicode_eval unicode_strings)],
     "default" => [qw()],
 );
 
@@ -366,6 +368,14 @@ conjunction with the "refaliasing" feature.  See L<perlref/Declaring a
 Reference to a Variable> for examples.
 
 This feature is available from Perl 5.26 onwards.
+
+=head2 The 'isa' feature
+
+This allows the use of the C<isa> infix operator, which tests whether the
+scalar given by the left operand is an object of the class given by the
+right operand. See L<perlop/isa operator> for more details.
+
+This feature is available from Perl 5.31.6.
 
 =head1 FEATURE BUNDLES
 
