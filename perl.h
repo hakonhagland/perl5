@@ -3445,6 +3445,12 @@ EXTERN_C int perl_tsa_mutex_unlock(perl_mutex* mutex)
     No longer use %1p for VDf = %vd.  RMB 2007-10-19
 */
 
+/*
+=for apidoc Amnh||SVf
+=for apidoc Amh||SVfARG|SV *sv
+
+=cut
+*/
 #ifndef SVf_
 #  define SVf_(n) "-" STRINGIFY(n) "p"
 #endif
