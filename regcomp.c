@@ -14526,13 +14526,23 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
 
                 goto continue_parse;
             }
-            else if (! LOC) {  /* XXX shouldn't /l assume could be a UTF-8
-                                locale, and prepare for that? */
+            else if (FOLD) {
                 bool splittable = FALSE;
                 bool backed_up = FALSE;
-                char * e = s;
+                char * e;
+                char * s_start;
 
-                assert(FOLD);
+                /* As explained below, we may need to actually fold a /l node.
+                 * But 'maybe_exactfu' has been set so that if TRUE, everything
+                 * in the node has already been folded.  Otherwise, we need a
+                 * place to store the folded string, and a way to map the
+                 * beginnings of characters in it back to the unfolded original
+                 * */
+                bool need_to_fold_loc = LOC && ! maybe_exactfu;
+                char locfold_buf
+                     [ ((256 + 2) * UTF8_MAXBYTES_CASE) + 1];
+                STRLEN loc_correspondence
+                     [ ((256 + 2) * UTF8_MAXBYTES_CASE) + 1] = {0};
 
                 /* Here is /i.  Running out of room creates a problem if we are
                  * folding, and the split happens in the middle of a
@@ -14569,7 +14579,63 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
                  *  oldp      points to the beginning byte in the input of
                  *            'ender'.
                  *
-                 * If the final character of the node and the fold of ender
+                 * In the case of /l, we haven't folded anything that could be
+                 * affected by the locale.  That means we have to reparse the
+                 * node, folding everything assuming a UTF-8 locale.  If at
+                 * runtime it isn't such a locale, the actions here won't be
+                 * necessary, but we have to assume the worst case.  If we find
+                 * we need to back off the folded string, we find where that
+                 * corresponds with the unfolded one, and output that one
+                 * instead, so the original node is output, truncated */
+                if (need_to_fold_loc) {
+                    char * redo_p = RExC_parse;
+                    char * redo_e = locfold_buf;
+                    char *old_redo_e;
+
+                    if (UTF) {
+                        Size_t added_len;
+
+                        for (redo_p = RExC_parse ; redo_p <= oldp; redo_p += UTF8SKIP(redo_p)) {
+                            old_redo_e = redo_e;
+                            loc_correspondence[redo_e - locfold_buf] = redo_p - RExC_parse;
+
+                            (void) _to_utf8_fold_flags((U8 *) redo_p,
+                                                       (U8 *) RExC_end,
+                                                       (U8 *) redo_e,
+                                                       &added_len,
+                                                       FOLD_FLAGS_FULL);
+                            redo_e += added_len;
+                        }
+                    }
+                    else {
+                        for (redo_p = RExC_parse ; redo_p <= oldp; redo_p++) {
+                            old_redo_e = redo_e;
+                            loc_correspondence[redo_e - locfold_buf] = redo_p - RExC_parse;
+
+                            if (UCHARAT(redo_p) != LATIN_SMALL_LETTER_SHARP_S) {
+                                *redo_e++ = toLOWER_L1(UCHARAT(redo_p));
+                            }
+                            else {
+                                *redo_e++ = 's';
+                                *redo_e++ = 's';
+                            }
+                        }
+                    }
+
+                    /* Set so that things are in terms of the folded, temporary string */
+                    s = old_redo_e;
+                    s_start = locfold_buf;
+                    e = redo_e;
+
+                }
+                else {
+                    e = s;
+                    s_start = s0;
+                    s = old_old_s;  /* Point to the beginning of the final char
+                                       that fits in the node */
+                }
+
+                /* If the final character of the node and the fold of ender
                  * form the first two characters of a three character fold, we
                  * need to peek ahead at the next (unparsed) character in the
                  * input to determine if the three actually do form such a
@@ -14608,11 +14674,8 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
                  * and try again.
                  *
                  * Otherwise, the node can be split at the current position.
-                 */
-                s = old_old_s;  /* Point to the beginning of the final char
-                                   that fits in the node */
-
-                /* The same logic is used for UTF-8 patterns and not */
+                 *
+                 * The same logic is used for UTF-8 patterns and not */
                 if (UTF) {
                     Size_t added_len;
 
@@ -14651,7 +14714,7 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
                          * drop down to try at that position */
                         if (isPUNCT(*p)) {
                             s = (char *) utf8_hop_back((U8 *) s, -1,
-                                       (U8 *) s0);
+                                       (U8 *) s_start);
                             backed_up = TRUE;
                         }
                         else {
@@ -14683,7 +14746,7 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
                      * either case would break apart a fold */
                     do {
                         char *prev_s = (char *) utf8_hop_back((U8 *) s, -1,
-                                                                    (U8 *) s0);
+                                                            (U8 *) s_start);
 
                         /* If is a multi-char fold, can't split here.  Backup
                          * one char and try again */
@@ -14697,11 +14760,11 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
                          * three character fold starting at the character
                          * before s, we can't split either before or after s.
                          * Backup two chars and try again */
-                        if (   LIKELY(s > s0)
+                        if (   LIKELY(s > s_start)
                             && UNLIKELY(is_THREE_CHAR_FOLD_utf8_safe(prev_s, e)))
                         {
                             s = prev_s;
-                            s = (char *) utf8_hop_back((U8 *) s, -1, (U8 *) s0);
+                            s = (char *) utf8_hop_back((U8 *) s, -1, (U8 *) s_start);
                             backed_up = TRUE;
                             continue;
                         }
@@ -14711,7 +14774,7 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
                         splittable = TRUE;
                         break;
 
-                    } while (s > s0); /* End of loops backing up through the node */
+                    } while (s > s_start); /* End of loops backing up through the node */
 
                     /* Here we either couldn't find a place to split the node,
                      * or else we broke out of the loop setting 'splittable' to
@@ -14760,7 +14823,7 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
                             continue;
                         }
 
-                        if (   LIKELY(s > s0)
+                        if (   LIKELY(s > s_start)
                             && UNLIKELY(is_THREE_CHAR_FOLD_latin1_safe(s - 1, e)))
                         {
                             s -= 2;
@@ -14771,7 +14834,7 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
                         splittable = TRUE;
                         break;
 
-                    } while (s > s0);
+                    } while (s > s_start);
 
                     if (splittable) {
                         s++;
@@ -14785,7 +14848,19 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
                    /* If we did find a place to split, reparse the entire node
                     * stopping where we have calculated. */
                     if (splittable) {
-                        upper_fill = s - s0;
+
+                       /* If we created a temporary folded string under /l, we
+                        * have to map that back to the original */
+                        if (need_to_fold_loc) {
+                            upper_fill = loc_correspondence[s - s_start];
+                            if (upper_fill == 0) {
+                                FAIL2("panic: loc_correspondence[%d] is 0",
+                                      (int) (s - s_start));
+                            }
+                        }
+                        else {
+                            upper_fill = s - s0;
+                        }
                         goto reparse;
                     }
 
