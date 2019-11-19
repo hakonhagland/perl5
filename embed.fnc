@@ -1885,6 +1885,7 @@ EiT	|void	|invlist_iterfinish|NN SV* invlist
 #endif
 #if defined(PERL_IN_REGCOMP_C)
 EiRT	|bool	|invlist_is_iterating|NN SV* const invlist
+EiRT	|UV	|invlist_lowest|NN SV* const invlist
 EiR	|SV*	|invlist_contents|NN SV* const invlist		    \
 				 |const bool traditional_style
 #ifndef PERL_EXT_RE_BUILD
