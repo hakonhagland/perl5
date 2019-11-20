@@ -19370,11 +19370,14 @@ S_regclass(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth,
                         anyof_flags = low_utf8[0];
                         op = ANYOFHb;
                     }
-                    else {
+                    else {  /* XXX finish commenting */
                         op = ANYOFHs;
                         ret = regnode_guts(pRExC_state, op, regarglen[op] + STR_SZ(len), "anyofhs");
                         FILL_NODE(ret, op);
-                        RExC_emit += 1 + regarglen[op] - 1 + STR_SZ(len);
+                        RExC_emit += 1 + regarglen[op]
+                                   - 1 + STR_SZ(len); /* Replace the [1]
+                                                         element of the struct
+                                                         by the real value */
                         REGNODE_p(ret)->flags = len;
                         Copy(low_utf8, ((struct regnode_anyofhs *) REGNODE_p(ret))->string, len, U8);
                         NEXT_OFF(REGNODE_p(ret)) = regarglen[op] + STR_SZ(len);
